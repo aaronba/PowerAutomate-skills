@@ -1,0 +1,14 @@
+name: powerautomate
+description: >
+  Power Automate cloud flow lifecycle management — list, export, import, edit,
+  enable/disable, and health-check flows in Dataverse environments.
+  Works with both GitHub Copilot CLI and Claude Code.
+version: 0.1.0
+skills:
+  - pa-overview
+  - pa-connect
+  - pa-list
+  - pa-export
+  - pa-import
+  - pa-health
+  - pa-enable

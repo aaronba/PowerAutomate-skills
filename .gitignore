@@ -1,0 +1,6 @@
+.env
+.token_cache.bin
+__pycache__/
+*.pyc
+.vscode/settings.json
+.claude/mcp_settings.json
