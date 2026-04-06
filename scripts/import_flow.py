@@ -76,7 +76,22 @@ def import_flow(
     fix_kind: bool = True,
 ) -> dict:
     with open(flow_json_path, "r", encoding="utf-8") as f:
-        clientdata = json.load(f)
+        raw = json.load(f)
+
+    # Normalize: clientdata must have properties.definition envelope
+    if "properties" in raw and "definition" in raw["properties"]:
+        clientdata = raw
+        definition = raw["properties"]["definition"]
+    else:
+        # Bare definition — wrap it in the required envelope
+        definition = raw
+        clientdata = {
+            "properties": {
+                "connectionReferences": {},
+                "definition": definition,
+            },
+            "schemaVersion": "1.0.0.0",
+        }
 
     dv_token = auth.get_dataverse_token()
     flow_token = auth.get_flow_token()
@@ -109,8 +124,6 @@ def import_flow(
         "Authorization": f"Bearer {flow_token}",
         "Content-Type": "application/json",
     }
-
-    definition = clientdata.get("properties", {}).get("definition", clientdata)
 
     # Step 3: Optionally patch kind:Skills
     if fix_kind:
