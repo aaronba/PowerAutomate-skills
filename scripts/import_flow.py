@@ -129,6 +129,11 @@ def import_flow(
     if fix_kind:
         definition = patch_kind_skills(definition)
 
+    # Ensure required Flow API fields are present
+    FLOW_SCHEMA = "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#"
+    definition.setdefault("$schema", FLOW_SCHEMA)
+    definition.setdefault("contentVersion", "1.0.0.0")
+
     patch_url = (
         f"{auth.flow_api_base}/providers/Microsoft.ProcessSimple"
         f"/environments/{env_id}/flows/{flow_id}"
