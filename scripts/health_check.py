@@ -87,16 +87,34 @@ def check_flow(
         issues.append("Flow is disabled (statecode != 0)")
         if fix:
             try:
+                # Enable via Flow API
                 start_url = (
                     f"{auth.flow_api_base}/providers/Microsoft.ProcessSimple"
                     f"/environments/{env_id}/flows/{flow_id}/start"
                     f"?api-version=2016-11-01"
                 )
                 resp = requests.post(
-                    start_url, headers={"Authorization": f"Bearer {flow_token}"}
+                    start_url, headers={"Authorization": f"Bearer {flow_token}"},
+                    timeout=30,
                 )
                 resp.raise_for_status()
-                fixes_applied.append("Enabled flow via Flow API")
+                # Also update Dataverse statecode to match
+                dv_token = auth.get_dataverse_token()
+                dv_patch_url = (
+                    f"{auth.dataverse_url}/api/data/v9.2"
+                    f"/workflows({flow_id})"
+                )
+                requests.patch(
+                    dv_patch_url,
+                    headers={
+                        **DV_HEADERS,
+                        "Authorization": f"Bearer {dv_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"statecode": 0, "statuscode": 1},
+                    timeout=30,
+                ).raise_for_status()
+                fixes_applied.append("Enabled flow via Flow API + Dataverse")
             except Exception as e:
                 issues.append(f"Fix failed — could not enable: {e}")
 
@@ -114,7 +132,8 @@ def check_flow(
             f"?api-version=2016-11-01"
         )
         flow_resp = requests.get(
-            flow_url, headers={"Authorization": f"Bearer {flow_token}"}
+            flow_url, headers={"Authorization": f"Bearer {flow_token}"},
+            timeout=30,
         )
         if flow_resp.ok:
             flow_data = flow_resp.json()
@@ -191,7 +210,7 @@ def check_flow(
     return result
 
 
-def health_check(auth: FlowAuth, fix: bool = False) -> dict:
+def health_check(auth: FlowAuth, fix: bool = False, flow_ids: list = None, verbose: bool = False) -> dict:
     dv_token = auth.get_dataverse_token()
     flow_token = auth.get_flow_token()
 
@@ -203,14 +222,24 @@ def health_check(auth: FlowAuth, fix: bool = False) -> dict:
         f"?$filter=category eq 5"
         f"&$select=workflowid,name,statecode,statuscode,resourcecontainer"
     )
-    resp = requests.get(url, headers=dv_headers)
+    resp = requests.get(url, headers=dv_headers, timeout=30)
     resp.raise_for_status()
     workflows = resp.json().get("value", [])
 
+    if flow_ids:
+        id_set = set(fid.lower() for fid in flow_ids)
+        workflows = [wf for wf in workflows if wf["workflowid"].lower() in id_set]
+
     env_id = resolve_flow_env_id(auth, flow_token)
 
+    total = len(workflows)
+    if verbose:
+        print(f"Checking {total} flows in env {env_id}...", file=sys.stderr, flush=True)
+
     results = []
-    for wf in workflows:
+    for i, wf in enumerate(workflows):
+        if verbose:
+            print(f"  [{i+1}/{total}] {wf.get('name', '?')}...", file=sys.stderr, flush=True)
         result = check_flow(auth, wf, env_id, flow_token, fix=fix)
         results.append(result)
 
@@ -230,6 +259,8 @@ def main():
     parser.add_argument("--cloud", default=os.environ.get("CPS_CLOUD"))
     parser.add_argument("--tenant-id", default=os.environ.get("TENANT_ID"))
     parser.add_argument("--fix", action="store_true", help="Auto-remediate issues")
+    parser.add_argument("--flow-ids", nargs="+", help="Check only specific flow IDs")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show progress")
     args = parser.parse_args()
 
     try:
@@ -238,7 +269,7 @@ def main():
             cloud=args.cloud,
             tenant_id=args.tenant_id,
         )
-        result = health_check(auth, fix=args.fix)
+        result = health_check(auth, fix=args.fix, flow_ids=args.flow_ids, verbose=args.verbose)
         print(json.dumps(result, indent=2))
         sys.exit(0)
     except Exception as e:

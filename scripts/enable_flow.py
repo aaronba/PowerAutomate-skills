@@ -62,7 +62,7 @@ def get_disabled_flow_ids(auth: FlowAuth, dv_token: str) -> list:
     return [w["workflowid"] for w in resp.json().get("value", [])]
 
 
-def enable_flow(auth: FlowAuth, env_id: str, flow_id: str, flow_token: str) -> dict:
+def enable_flow(auth: FlowAuth, env_id: str, flow_id: str, flow_token: str, dv_token: str = None) -> dict:
     url = (
         f"{auth.flow_api_base}/providers/Microsoft.ProcessSimple"
         f"/environments/{env_id}/flows/{flow_id}/start"
@@ -70,6 +70,18 @@ def enable_flow(auth: FlowAuth, env_id: str, flow_id: str, flow_token: str) -> d
     )
     resp = requests.post(url, headers={"Authorization": f"Bearer {flow_token}"})
     resp.raise_for_status()
+    # Also update Dataverse statecode to match
+    if dv_token:
+        dv_url = f"{auth.dataverse_url}/api/data/v9.2/workflows({flow_id})"
+        requests.patch(
+            dv_url,
+            headers={
+                **DV_HEADERS,
+                "Authorization": f"Bearer {dv_token}",
+                "Content-Type": "application/json",
+            },
+            json={"statecode": 0, "statuscode": 1},
+        ).raise_for_status()
     return {"flowId": flow_id, "action": "enabled"}
 
 
@@ -150,7 +162,7 @@ def run(
         flow_result = {"flowId": fid, "actions": []}
         try:
             if do_enable:
-                r = enable_flow(auth, env_id, fid, flow_token)
+                r = enable_flow(auth, env_id, fid, flow_token, dv_token=dv_token)
                 flow_result["actions"].append(r)
             if do_disable:
                 r = disable_flow(auth, env_id, fid, flow_token)
